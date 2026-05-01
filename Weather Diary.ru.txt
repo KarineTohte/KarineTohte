@@ -1,201 +1,266 @@
 Разберу задачу пошагово — от создания интерфейса до публикации на GitHub.
-
-## Шаг 1. Создание интерфейса и базовой логики (Python + Tkinter)
-
-**1. Установите зависимости** (если нужно):
-```bash
-pip install tkinter
-```
-
-**2. Код приложения (`weather_diary.py`):**
-```python
 import tkinter as tk
 from tkinter import ttk, messagebox
 import json
+import os
 from datetime import datetime
 
-class WeatherDiary:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Weather Diary")
-        self.entries = []
-        self.load_data()
+# ---------- Файл для сохранения данных ----------
+DATA_FILE = "weather_diary.json"
 
-        # Поля ввода
-        tk.Label(root, text="Дата (YYYY-MM-DD):").grid(row=0, column=0, padx=5, pady=5)
-        self.date_entry = tk.Entry(root)
-        self.date_entry.grid(row=0, column=1, padx=5, pady=5)
+# ---------- Загрузка данных из JSON ----------
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-        tk.Label(root, text="Температура (°C):").grid(row=1, column=0, padx=5, pady=5)
-        self.temp_entry = tk.Entry(root)
-        self.temp_entry.grid(row=1, column=1, padx=5, pady=5)
+# ---------- Сохранение данных в JSON ----------
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
-        tk.Label(root, text="Описание погоды:").grid(row=2, column=0, padx=5, pady=5)
-        self.desc_entry = tk.Entry(root)
-        self.desc_entry.grid(row=2, column=1, padx=5, pady=5)
+# ---------- Обновление таблицы записей ----------
+def update_table(records=None):
+    # Очищаем таблицу
+    for row in tree.get_children():
+        tree.delete(row)
+    
+    # Если записи не переданы, показываем все
+    if records is None:
+        records = diary_entries
+    
+    # Добавляем записи в таблицу
+    for entry in records:
+        tree.insert("", tk.END, values=(
+            entry["date"],
+            entry["temperature"],
+            entry["description"],
+            "Да" if entry["precipitation"] else "Нет"
+        ))
 
-        tk.Label(root, text="Осадки:").grid(row=3, column=0, padx=5, pady=5)
-        self.precip_var = tk.StringVar(value="Нет")
-        tk.Radiobutton(root, text="Да", variable=self.precip_var, value="Да").grid(row=3, column=1, sticky="w")
-        tk.Radiobutton(root, text="Нет", variable=self.precip_var, value="Нет").grid(row=3, column=1, sticky="e")
-
-        # Кнопки
-        tk.Button(root, text="Добавить запись", command=self.add_entry).grid(row=4, column=0, pady=10)
-        tk.Button(root, text="Сохранить в JSON", command=self.save_data).grid(row=4, column=1, pady=10)
-
-        # Таблица для отображения записей
-        self.tree = ttk.Treeview(root, columns=("Date", "Temp", "Desc", "Precip"), show="headings")
-        self.tree.heading("Date", text="Дата")
-        self.tree.heading("Temp", text="Температура")
-        self.tree.heading("Desc", text="Описание")
-        self.tree.heading("Precip", text="Осадки")
-        self.tree.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
-
-        # Фильтры
-        tk.Label(root, text="Фильтр по дате (YYYY-MM-DD):").grid(row=6, column=0, padx=5, pady=5)
-        self.filter_date_entry = tk.Entry(root)
-        self.filter_date_entry.grid(row=6, column=1, padx=5, pady=5)
-
-        tk.Label(root, text="Фильтр по температуре (>):").grid(row=7, column=0, padx=5, pady=5)
-        self.filter_temp_entry = tk.Entry(root)
-        self.filter_temp_entry.grid(row=7, column=1, padx=5, pady=5)
-
-        tk.Button(root, text="Применить фильтры", command=self.apply_filters).grid(row=8, column=0, columnspan=2, pady=10)
-
-        self.refresh_table()
-
-    def validate_input(self):
+# ---------- Добавление новой записи ----------
+def add_entry():
+    # Получаем данные из полей ввода
+    date = date_entry.get()
+    temperature = temp_entry.get()
+    description = desc_entry.get()
+    precipitation = precip_var.get()
+    
+    # Проверка корректности ввода
+    try:
+        # Проверяем формат даты (ДД.ММ.ГГГГ или ГГГГ-ММ-ДД)
+        datetime.strptime(date, "%d.%m.%Y")
+    except ValueError:
         try:
-            date = datetime.strptime(self.date_entry.get(), "%Y-%m-%d")
+            datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
-            messagebox.showerror("Ошибка", "Неверный формат даты. Используйте YYYY-MM-DD.")
-            return False
-
-        try:
-            temp = float(self.temp_entry.get())
-        except ValueError:
-            messagebox.showerror("Ошибка", "Температура должна быть числом.")
-            return False
-
-        if not self.desc_entry.get():
-            messagebox.showerror("Ошибка", "Описание не может быть пустым.")
-            return False
-
-        return True
-
-    def add_entry(self):
-        if not self.validate_input():
+            messagebox.showerror("Ошибка", "Дата должна быть в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД")
             return
+    
+    try:
+        temp_value = float(temperature)
+    except ValueError:
+        messagebox.showerror("Ошибка", "Температура должна быть числом")
+        return
+    
+    if not description.strip():
+        messagebox.showerror("Ошибка", "Описание погоды не может быть пустым")
+        return
+    
+    # Создаём запись
+    new_entry = {
+        "date": date,
+        "temperature": temp_value,
+        "description": description,
+        "precipitation": precipitation
+    }
+    
+    diary_entries.append(new_entry)
+    save_data(diary_entries)
+    update_table()
+    
+    # Очищаем поля ввода
+    date_entry.delete(0, tk.END)
+    temp_entry.delete(0, tk.END)
+    desc_entry.delete(0, tk.END)
+    precip_var.set(False)
+    
+    messagebox.showinfo("Успех", "Запись добавлена!")
 
-        entry = {
-            "date": self.date_entry.get(),
-            "temperature": float(self.temp_entry.get()),
-            "description": self.desc_entry.get(),
-            "precipitation": self.precip_var.get()
-        }
-        self.entries.append(entry)
-        self.refresh_table()
-        self.clear_inputs()
-
-    def clear_inputs(self):
-        self.date_entry.delete(0, tk.END)
-        self.temp_entry.delete(0, tk.END)
-        self.desc_entry.delete(0, tk.END)
-        self.precip_var.set("Нет")
-
-    def refresh_table(self, filtered_entries=None):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        entries_to_show = filtered_entries if filtered_entries is not None else self.entries
-        for entry in entries_to_show:
-            self.tree.insert("", "end", values=(
-                entry["date"],
-                entry["temperature"],
-                entry["description"],
-                entry["precipitation"]
-            ))
-
-    def apply_filters(self):
-        filtered = self.entries
-
-        date_filter = self.filter_date_entry.get()
-        if date_filter:
-            filtered = [e for e in filtered if e["date"] == date_filter]
-
-        temp_filter = self.filter_temp_entry.get()
-        if temp_filter:
-            try:
-                temp_threshold = float(temp_filter)
-                filtered = [e for e in filtered if e["temperature"] > temp_threshold]
-            except ValueError:
-                messagebox.showerror("Ошибка", "Температура фильтра должна быть числом.")
-                return
-
-        self.refresh_table(filtered)
-
-    def save_data(self):
-        with open("weather_data.json", "w", encoding="utf-8") as f:
-            json.dump(self.entries, f, ensure_ascii=False, indent=4)
-        messagebox.showinfo("Успех", "Данные сохранены в weather_data.json")
-
-    def load_data(self):
+# ---------- Фильтрация по дате ----------
+def filter_by_date():
+    filter_date = filter_date_entry.get()
+    if not filter_date:
+        messagebox.showwarning("Предупреждение", "Введите дату для фильтрации")
+        return
+    
+    try:
+        datetime.strptime(filter_date, "%d.%m.%Y")
+    except ValueError:
         try:
-            with open("weather_data.json", "r", encoding="utf-8") as f:
-                self.entries = json.load(f)
-        except FileNotFoundError:
-            self.entries = []
+            datetime.strptime(filter_date, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Ошибка", "Дата должна быть в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД")
+            return
+    
+    filtered = [entry for entry in diary_entries if entry["date"] == filter_date]
+    
+    if filtered:
+        update_table(filtered)
+        messagebox.showinfo("Результат", f"Найдено {len(filtered)} записей")
+    else:
+        messagebox.showinfo("Результат", "Записей на эту дату не найдено")
+        update_table()
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = WeatherDiary(root)
-    root.mainloop()
-```
+# ---------- Фильтрация по температуре ----------
+def filter_by_temperature():
+    try:
+        min_temp = float(filter_temp_min_entry.get()) if filter_temp_min_entry.get() else -float('inf')
+        max_temp = float(filter_temp_max_entry.get()) if filter_temp_max_entry.get() else float('inf')
+    except ValueError:
+        messagebox.showerror("Ошибка", "Температура должна быть числом")
+        return
+    
+    filtered = [entry for entry in diary_entries 
+                if min_temp <= entry["temperature"] <= max_temp]
+    
+    if filtered:
+        update_table(filtered)
+        messagebox.showinfo("Результат", f"Найдено {len(filtered)} записей")
+    else:
+        messagebox.showinfo("Результат", "Записей с такой температурой не найдено")
+        update_table()
 
-## Шаг 2. Настройка Git и создание репозитория
+# ---------- Сброс фильтрации (показать все записи) ----------
+def reset_filter():
+    filter_date_entry.delete(0, tk.END)
+    filter_temp_min_entry.delete(0, tk.END)
+    filter_temp_max_entry.delete(0, tk.END)
+    update_table()
+    messagebox.showinfo("Фильтр сброшен", "Показаны все записи")
 
-1. Создайте папку проекта и перейдите в неё:
-```bash
-mkdir WeatherDiary
-cd WeatherDiary
-```
-2. Инициализируйте Git‑репозиторий:
-```bash
-git init
-```
-3. Создайте файл `.gitignore` для исключения временных файлов:
-```
-__pycache__/
-*.pyc
-*.json  # если не хотите сохранять данные в репозитории
-```
-4. Добавьте файлы в репозиторий и сделайте первый коммит:
-```bash
-git add .
-git commit -m "Initial commit: Weather Diary GUI app"
-```
+# ---------- Удаление выбранной записи ----------
+def delete_selected():
+    selected = tree.selection()
+    if not selected:
+        messagebox.showwarning("Предупреждение", "Выберите запись для удаления")
+        return
+    
+    if messagebox.askyesno("Подтверждение", "Удалить выбранную запись?"):
+        # Получаем индекс выбранной записи
+        for item in selected:
+            values = tree.item(item)["values"]
+            # Ищем запись в списке
+            for i, entry in enumerate(diary_entries):
+                if (entry["date"] == values[0] and 
+                    entry["temperature"] == float(values[1]) and
+                    entry["description"] == values[2]):
+                    diary_entries.pop(i)
+                    break
+        
+        save_data(diary_entries)
+        update_table()
+        messagebox.showinfo("Успех", "Запись удалена")
 
-## Шаг 3. Публикация на GitHub
+# ---------- Инициализация данных ----------
+diary_entries = load_data()
 
-1. Создайте новый репозиторий на GitHub (не добавляйте README или .gitignore — они уже есть у вас).
-2. Свяжите локальный репозиторий с удалённым:
-```bash
-git remote add origin https://github.com/yourusername/WeatherDiary.git
-```
-3. Отправьте код на GitHub:
-```bash
-git push -u origin main
-```
+# ---------- Создание GUI ----------
+root = tk.Tk()
+root.title("Дневник погоды")
+root.geometry("900x600")
+root.resizable(False, False)
 
-## Шаг 4. Создание README.md
+# Стили
+style = ttk.Style()
+style.theme_use('clam')
 
-Создайте файл `README.md` в корне проекта:
-```markdown
-# Weather Diary
+# ========== Панель добавления записи ==========
+add_frame = ttk.LabelFrame(root, text="Добавить запись", padding=10)
+add_frame.pack(fill="x", padx=10, pady=5)
 
-Автор: [Кантлокова Крастина]
+# Дата
+ttk.Label(add_frame, text="Дата (ДД.ММ.ГГГГ):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+date_entry = ttk.Entry(add_frame, width=15)
+date_entry.grid(row=0, column=1, padx=5, pady=5)
 
-## Описание
+# Температура
+ttk.Label(add_frame, text="Температура (°C):").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+temp_entry = ttk.Entry(add_frame, width=10)
+temp_entry.grid(row=0, column=3, padx=5, pady=5)
 
-Приложение "Weather Diary" позволяет вести дневник погоды с возможностью:
-* добавления записей (дата, температура
+# Описание
+ttk.Label(add_frame, text="Описание:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+desc_entry = ttk.Entry(add_frame, width=25)
+desc_entry.grid(row=0, column=5, padx=5, pady=5)
+
+# Осадки
+precip_var = tk.BooleanVar()
+precip_check = ttk.Checkbutton(add_frame, text="Осадки", variable=precip_var)
+precip_check.grid(row=0, column=6, padx=10, pady=5)
+
+# Кнопка добавления
+add_btn = ttk.Button(add_frame, text="Добавить запись", command=add_entry)
+add_btn.grid(row=0, column=7, padx=10, pady=5)
+
+# ========== Панель фильтрации ==========
+filter_frame = ttk.LabelFrame(root, text="Фильтрация записей", padding=10)
+filter_frame.pack(fill="x", padx=10, pady=5)
+
+# Фильтр по дате
+ttk.Label(filter_frame, text="Дата:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+filter_date_entry = ttk.Entry(filter_frame, width=15)
+filter_date_entry.grid(row=0, column=1, padx=5, pady=5)
+filter_date_btn = ttk.Button(filter_frame, text="Фильтр по дате", command=filter_by_date)
+filter_date_btn.grid(row=0, column=2, padx=5, pady=5)
+
+# Фильтр по температуре
+ttk.Label(filter_frame, text="Температура от:").grid(row=0, column=3, padx=5, pady=5, sticky="w")
+filter_temp_min_entry = ttk.Entry(filter_frame, width=8)
+filter_temp_min_entry.grid(row=0, column=4, padx=5, pady=5)
+
+ttk.Label(filter_frame, text="до:").grid(row=0, column=5, padx=5, pady=5, sticky="w")
+filter_temp_max_entry = ttk.Entry(filter_frame, width=8)
+filter_temp_max_entry.grid(row=0, column=6, padx=5, pady=5)
+
+filter_temp_btn = ttk.Button(filter_frame, text="Фильтр по температуре", command=filter_by_temperature)
+filter_temp_btn.grid(row=0, column=7, padx=5, pady=5)
+
+# Кнопка сброса фильтра
+reset_btn = ttk.Button(filter_frame, text="Сбросить фильтр", command=reset_filter)
+reset_btn.grid(row=0, column=8, padx=10, pady=5)
+
+# ========== Таблица записей ==========
+table_frame = ttk.LabelFrame(root, text="Записи о погоде", padding=10)
+table_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+# Создаём таблицу
+columns = ("Дата", "Температура", "Описание", "Осадки")
+tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=15)
+tree.heading("Дата", text="Дата")
+tree.heading("Температура", text="Температура (°C)")
+tree.heading("Описание", text="Описание")
+tree.heading("Осадки", text="Осадки")
+
+tree.column("Дата", width=120)
+tree.column("Температура", width=100)
+tree.column("Описание", width=400)
+tree.column("Осадки", width=80)
+
+# Добавляем скроллбар
+scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=tree.yview)
+tree.configure(yscrollcommand=scrollbar.set)
+
+tree.pack(side=tk.LEFT, fill="both", expand=True)
+scrollbar.pack(side=tk.RIGHT, fill="y")
+
+# ========== Кнопка удаления ==========
+delete_btn = ttk.Button(root, text="Удалить выбранную запись", command=delete_selected)
+delete_btn.pack(pady=10)
+
+# Загружаем существующие записи
+update_table()
+
+# Запуск приложения
+root.mainloop()
